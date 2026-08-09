@@ -14,6 +14,10 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
 
     [Header("Optical scope")]
     [SerializeField] private CanvasGroup opticalScopeCanvasGroup;
+    [Tooltip("Fixed UI image used as the optical scope mask/cursor. Its transparent area reveals the view through the scope.")]
+    [SerializeField] private RectTransform opticalScopeMask;
+    [Tooltip("Optional CanvasGroup for the optical scope mask if it needs independent fading.")]
+    [SerializeField] private CanvasGroup opticalScopeMaskCanvasGroup;
     [SerializeField, Min(0.01f)] private float opticalScopeTransitionTime = 0.2f;
 
     [Header("Size")]
@@ -61,9 +65,17 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
 
         UpdateOpticalScopeVisibility();
 
-        if (controller != null && controller.IsAiming && reticle != null)
+        bool opticalScopeAiming = controller != null && controller.IsOpticalScopeAiming;
+        if (controller != null && controller.IsAiming && !opticalScopeAiming && reticle != null)
         {
             reticle.position = controller.AimScreenPosition;
+        }
+
+        if (opticalScopeMask != null)
+        {
+            opticalScopeMask.position = controller != null
+                ? controller.AimScreenPosition
+                : (Vector2)Input.mousePosition;
         }
 
         float movement = controller != null ? controller.MoveInput.magnitude : 0f;
@@ -117,21 +129,28 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
         if (canvasGroup == null)
             return;
 
-        float targetAlpha = controller != null && controller.IsAiming ? 1f : 0f;
+        float targetAlpha = controller != null && controller.IsAiming && !controller.IsOpticalScopeAiming ? 1f : 0f;
         float alphaStep = Time.unscaledDeltaTime / visibilityTransitionTime;
         canvasGroup.alpha = Mathf.MoveTowards(canvasGroup.alpha, targetAlpha, alphaStep);
     }
 
     private void UpdateOpticalScopeVisibility()
     {
-        if (opticalScopeCanvasGroup == null)
-            return;
-
         float targetAlpha = controller != null && controller.IsOpticalScopeAiming ? 1f : 0f;
         float alphaStep = Time.unscaledDeltaTime / opticalScopeTransitionTime;
-        opticalScopeCanvasGroup.alpha = Mathf.MoveTowards(opticalScopeCanvasGroup.alpha, targetAlpha, alphaStep);
-        opticalScopeCanvasGroup.interactable = false;
-        opticalScopeCanvasGroup.blocksRaycasts = false;
+        if (opticalScopeCanvasGroup != null)
+        {
+            opticalScopeCanvasGroup.alpha = Mathf.MoveTowards(opticalScopeCanvasGroup.alpha, targetAlpha, alphaStep);
+            opticalScopeCanvasGroup.interactable = false;
+            opticalScopeCanvasGroup.blocksRaycasts = false;
+        }
+
+        if (opticalScopeMaskCanvasGroup != null)
+        {
+            opticalScopeMaskCanvasGroup.alpha = Mathf.MoveTowards(opticalScopeMaskCanvasGroup.alpha, targetAlpha, alphaStep);
+            opticalScopeMaskCanvasGroup.interactable = false;
+            opticalScopeMaskCanvasGroup.blocksRaycasts = false;
+        }
     }
 
 }
