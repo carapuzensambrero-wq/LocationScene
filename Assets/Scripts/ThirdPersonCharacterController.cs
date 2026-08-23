@@ -8,11 +8,15 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterController))]
 public sealed class ThirdPersonCharacterController : MonoBehaviour
 {
+    private const float GunAimFallbackDistance = 1000f;
+
     [Header("References")]
     [SerializeField] private Camera playerCamera;
     [SerializeField] private Transform cameraTarget;
     [SerializeField] private Animator animator;
     [SerializeField] private ThirdPersonCrosshairUI crosshairUI;
+    [Tooltip("Weapon object rotated toward the current reticle center while aiming.")]
+    [SerializeField] private Transform gun;
 
     [Header("Movement")]
     [SerializeField, Min(0f)] private float walkSpeed = 2.5f;
@@ -53,7 +57,6 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
     [SerializeField, Min(0.1f)] private float aimMinimumCameraDistance = 1f;
     [SerializeField, Min(0.1f)] private float aimMaximumCameraDistance = 4f;
     [SerializeField] private Vector3 aimShoulderOffset = new Vector3(0.55f, 0.1f, 0f);
-    [SerializeField, Min(0.01f)] private float scopeDistanceThreshold = 1.05f;
     [SerializeField, Min(0f)] private float scopeForwardOffset = 0.25f;
     [SerializeField, Min(0.1f)] private float scopeFieldOfView = 25f;
     [SerializeField, Min(0.1f)] private float scopeMinimumFieldOfView = 10f;
@@ -86,6 +89,7 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
     private Vector2 moveInput;
     private Vector2 lookInput;
     private bool isAiming;
+    private bool opticalScopeAiming;
     private Vector2 virtualAimPosition;
     private Vector2 aimOffset;
     private float currentCameraDistance;
@@ -96,9 +100,9 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
     public Vector2 MoveInput => moveInput;
     public Vector2 AimScreenPosition => virtualAimPosition;
     public bool IsAiming => isAiming;
-    public bool IsOpticalScopeAiming => isAiming && currentAimCameraDistance <= aimMinimumCameraDistance + scopeDistanceThreshold;
+    public bool IsOpticalScopeAiming => isAiming && opticalScopeAiming;
     public bool IsGrounded => characterController != null && characterController.isGrounded;
-    public Vector3 AimDirection => playerCamera != null ? playerCamera.transform.forward : transform.forward;
+    public Vector3 AimDirection => isAiming ? GetAimRay().direction : (playerCamera != null ? playerCamera.transform.forward : transform.forward);
 
     private void Awake()
     {
@@ -131,6 +135,7 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
     {
         ReadInput();
         UpdateAimState();
+        UpdateOpticalScopeState();
         ApplyCursorState(isAiming);
         MoveCharacter();
         HandleFireInput();
@@ -149,6 +154,7 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
     private void LateUpdate()
     {
         UpdateCamera();
+        UpdateGunAim();
     }
 
     private void ReadInput()
@@ -166,10 +172,6 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
                     currentScopeFieldOfView - zoom * scopeZoomSpeed,
                     scopeMinimumFieldOfView,
                     scopeMaximumFieldOfView);
-
-                // Scrolling back to the widest scope view leaves optical mode.
-                if (currentScopeFieldOfView >= scopeMaximumFieldOfView - 0.001f)
-                    currentAimCameraDistance = aimMinimumCameraDistance + scopeDistanceThreshold + 0.001f;
             }
             else
             {
@@ -198,6 +200,25 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
         isAiming = requested;
         float target = requested ? 1f : 0f;
         aimBlend = Mathf.MoveTowards(aimBlend, target, aimTransitionSharpness * Time.deltaTime);
+    }
+
+    private void UpdateOpticalScopeState()
+    {
+        if (!isAiming)
+        {
+            opticalScopeAiming = false;
+            return;
+        }
+
+        if (!Input.GetMouseButtonDown(2))
+            return;
+
+        opticalScopeAiming = !opticalScopeAiming;
+        if (opticalScopeAiming)
+        {
+            currentAimCameraDistance = aimMinimumCameraDistance;
+            currentScopeFieldOfView = scopeMaximumFieldOfView;
+        }
     }
 
     private void ApplyCursorState(bool aiming)
@@ -251,7 +272,7 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
 
         Vector3 focus = cameraTarget.position + Vector3.up * cameraHeight;
         Quaternion orbit = Quaternion.Euler(pitch, yaw, 0f);
-        bool scopeMode = isAiming && currentAimCameraDistance <= aimMinimumCameraDistance + scopeDistanceThreshold;
+        bool scopeMode = IsOpticalScopeAiming;
         float distance = Mathf.Lerp(currentCameraDistance, currentAimCameraDistance, aimBlend);
         Vector3 normalOffset = cameraOffset;
         normalOffset.z = -distance;
@@ -305,6 +326,32 @@ public sealed class ThirdPersonCharacterController : MonoBehaviour
         playerCamera.transform.rotation = Quaternion.Slerp(playerCamera.transform.rotation, desiredRotation, rotationT);
         float targetFov = scopeMode ? currentScopeFieldOfView : normalFieldOfView;
         playerCamera.fieldOfView = Mathf.Lerp(playerCamera.fieldOfView, targetFov, rotationT);
+    }
+
+    private void UpdateGunAim()
+    {
+        if (!isAiming || gun == null || playerCamera == null)
+            return;
+
+        Ray aimRay = GetAimRay();
+        Vector3 aimPoint = aimRay.GetPoint(GunAimFallbackDistance);
+        RaycastHit hit;
+        if (Physics.Raycast(aimRay, out hit, GunAimFallbackDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            aimPoint = hit.point;
+
+        Vector3 gunDirection = aimPoint - gun.position;
+        if (gunDirection.sqrMagnitude <= 0.0001f)
+            return;
+
+        gun.rotation = Quaternion.LookRotation(gunDirection.normalized, Vector3.up);
+    }
+
+    private Ray GetAimRay()
+    {
+        if (playerCamera == null)
+            return new Ray(transform.position, transform.forward);
+
+        return playerCamera.ScreenPointToRay(virtualAimPosition);
     }
 
     private Vector3 ResolveCameraCollision(Vector3 focus, Vector3 desiredPosition)
