@@ -101,6 +101,7 @@ public sealed class OnlineThirdPersonCharacterController : NetworkBehaviour
     private float currentCameraDistance;
     private float currentAimCameraDistance;
     private float normalFieldOfView;
+    private bool hasNormalFieldOfView;
     private float currentScopeFieldOfView;
     private bool localControlsEnabled;
 
@@ -114,13 +115,13 @@ public sealed class OnlineThirdPersonCharacterController : NetworkBehaviour
     private void Awake()
     {
         characterController = GetComponent<CharacterController>();
-        if (playerCamera == null) playerCamera = GetComponentInChildren<Camera>(true);
+        ResolvePlayerCamera(false);
         if (cameraTarget == null) cameraTarget = transform;
         if (animator == null) animator = GetComponentInChildren<Animator>();
 
         currentCameraDistance = Mathf.Clamp(cameraDistance, minimumCameraDistance, maximumCameraDistance);
         currentAimCameraDistance = Mathf.Clamp(aimCameraDistance, aimMinimumCameraDistance, aimMaximumCameraDistance);
-        if (playerCamera != null) normalFieldOfView = playerCamera.fieldOfView;
+        CaptureNormalFieldOfView();
         currentScopeFieldOfView = Mathf.Clamp(scopeFieldOfView, scopeMinimumFieldOfView, scopeMaximumFieldOfView);
 
         yaw = transform.eulerAngles.y;
@@ -132,6 +133,7 @@ public sealed class OnlineThirdPersonCharacterController : NetworkBehaviour
     public override void OnStartClient()
     {
         base.OnStartClient();
+        ResolvePlayerCamera(IsOwner);
         SetLocalControls(IsOwner);
     }
 
@@ -177,6 +179,9 @@ public sealed class OnlineThirdPersonCharacterController : NetworkBehaviour
     {
         localControlsEnabled = enabled;
 
+        if (enabled)
+            ResolvePlayerCamera(true);
+
         if (playerCamera != null)
         {
             playerCamera.enabled = enabled;
@@ -200,6 +205,27 @@ public sealed class OnlineThirdPersonCharacterController : NetworkBehaviour
         }
 
         ApplyCursorState(false);
+    }
+
+    private void ResolvePlayerCamera(bool allowMainCamera)
+    {
+        if (playerCamera != null)
+            return;
+
+        playerCamera = GetComponentInChildren<Camera>(true);
+        if (playerCamera == null && allowMainCamera)
+            playerCamera = Camera.main;
+
+        CaptureNormalFieldOfView();
+    }
+
+    private void CaptureNormalFieldOfView()
+    {
+        if (hasNormalFieldOfView || playerCamera == null)
+            return;
+
+        normalFieldOfView = playerCamera.fieldOfView;
+        hasNormalFieldOfView = true;
     }
 
     private void HandleFireInput()
@@ -289,10 +315,9 @@ public sealed class OnlineThirdPersonCharacterController : NetworkBehaviour
 
     private void MoveCharacter()
     {
-        if (playerCamera == null) return;
-
-        Vector3 forward = playerCamera.transform.forward;
-        Vector3 right = playerCamera.transform.right;
+        Transform movementReference = playerCamera != null ? playerCamera.transform : transform;
+        Vector3 forward = movementReference.forward;
+        Vector3 right = movementReference.right;
         forward.y = 0f;
         right.y = 0f;
         forward.Normalize();
