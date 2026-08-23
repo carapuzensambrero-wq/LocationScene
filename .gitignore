@@ -37,6 +37,9 @@
 # Visual Studio cache directory
 .vs/
 
+# CodeBoarding generated logs and analysis state
+.codeboarding/logs/
+
 # Gradle cache directory
 .gradle/
 
@@ -69,6 +72,9 @@ sysinfo.txt
 
 # Mono auto generated files
 mono_crash.*
+
+# Unity package manager and editor-generated local state
+/Packages/packages-lock.json
 
 # Builds
 *.apk
