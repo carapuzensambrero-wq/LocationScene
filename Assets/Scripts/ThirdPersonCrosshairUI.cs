@@ -33,6 +33,7 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
     [SerializeField, Min(0.01f)] private float visibilityTransitionTime = 0.2f;
 
     private ThirdPersonCharacterController controller;
+    private OnlineThirdPersonCharacterController onlineController;
     private float shotImpulse;
     private float currentRadius;
     private Vector2 previousCursorPosition;
@@ -43,7 +44,7 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
 
     private void Awake()
     {
-        controller = Object.FindObjectOfType<ThirdPersonCharacterController>();
+        FindController();
         currentRadius = minimumRadius;
         ApplyRadius(currentRadius);
         previousCursorPosition = reticle != null ? reticle.position : Input.mousePosition;
@@ -58,31 +59,31 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
 
     private void Update()
     {
-        if (controller == null)
-            controller = Object.FindObjectOfType<ThirdPersonCharacterController>();
+        if (controller == null && (onlineController == null || !onlineController.IsOwner))
+            FindController();
 
         UpdateVisibility();
 
         UpdateOpticalScopeVisibility();
 
-        bool opticalScopeAiming = controller != null && controller.IsOpticalScopeAiming;
-        if (controller != null && controller.IsAiming && !opticalScopeAiming && reticle != null)
+        bool opticalScopeAiming = IsOpticalScopeAiming();
+        if (IsAiming() && !opticalScopeAiming && reticle != null)
         {
-            reticle.position = controller.AimScreenPosition;
+            reticle.position = GetControllerAimScreenPosition();
         }
 
         if (opticalScopeMask != null)
         {
-            opticalScopeMask.position = controller != null
-                ? controller.AimScreenPosition
+            opticalScopeMask.position = HasController()
+                ? GetControllerAimScreenPosition()
                 : (Vector2)Input.mousePosition;
         }
 
-        float movement = controller != null ? controller.MoveInput.magnitude : 0f;
+        float movement = HasController() ? GetControllerMoveInput().magnitude : 0f;
         float cursorSpeed = 0f;
-        if (controller != null)
+        if (HasController())
         {
-            Vector2 cursorPosition = controller.AimScreenPosition;
+            Vector2 cursorPosition = GetControllerAimScreenPosition();
             cursorSpeed = hasPreviousCursorPosition
                 ? Vector2.Distance(previousCursorPosition, cursorPosition)
                     / Mathf.Max(Time.unscaledDeltaTime, 0.0001f)
@@ -129,14 +130,14 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
         if (canvasGroup == null)
             return;
 
-        float targetAlpha = controller != null && controller.IsAiming && !controller.IsOpticalScopeAiming ? 1f : 0f;
+        float targetAlpha = IsAiming() && !IsOpticalScopeAiming() ? 1f : 0f;
         float alphaStep = Time.unscaledDeltaTime / visibilityTransitionTime;
         canvasGroup.alpha = Mathf.MoveTowards(canvasGroup.alpha, targetAlpha, alphaStep);
     }
 
     private void UpdateOpticalScopeVisibility()
     {
-        float targetAlpha = controller != null && controller.IsOpticalScopeAiming ? 1f : 0f;
+        float targetAlpha = IsOpticalScopeAiming() ? 1f : 0f;
         float alphaStep = Time.unscaledDeltaTime / opticalScopeTransitionTime;
         if (opticalScopeCanvasGroup != null)
         {
@@ -151,6 +152,57 @@ public sealed class ThirdPersonCrosshairUI : MonoBehaviour
             opticalScopeMaskCanvasGroup.interactable = false;
             opticalScopeMaskCanvasGroup.blocksRaycasts = false;
         }
+    }
+
+    private void FindController()
+    {
+        controller = Object.FindObjectOfType<ThirdPersonCharacterController>();
+        onlineController = GetComponentInParent<OnlineThirdPersonCharacterController>();
+
+        if (onlineController != null && onlineController.IsOwner)
+            return;
+
+        OnlineThirdPersonCharacterController[] onlineControllers = Object.FindObjectsOfType<OnlineThirdPersonCharacterController>(true);
+        for (int i = 0; i < onlineControllers.Length; i++)
+        {
+            if (onlineControllers[i].IsOwner)
+            {
+                onlineController = onlineControllers[i];
+                return;
+            }
+        }
+
+        if (onlineController == null && onlineControllers.Length > 0)
+            onlineController = onlineControllers[0];
+    }
+
+    private bool HasController()
+    {
+        return onlineController != null || controller != null;
+    }
+
+    private Vector2 GetControllerMoveInput()
+    {
+        if (onlineController != null) return onlineController.MoveInput;
+        return controller != null ? controller.MoveInput : Vector2.zero;
+    }
+
+    private Vector2 GetControllerAimScreenPosition()
+    {
+        if (onlineController != null) return onlineController.AimScreenPosition;
+        return controller != null ? controller.AimScreenPosition : (Vector2)Input.mousePosition;
+    }
+
+    private bool IsAiming()
+    {
+        if (onlineController != null) return onlineController.IsAiming;
+        return controller != null && controller.IsAiming;
+    }
+
+    private bool IsOpticalScopeAiming()
+    {
+        if (onlineController != null) return onlineController.IsOpticalScopeAiming;
+        return controller != null && controller.IsOpticalScopeAiming;
     }
 
 }
